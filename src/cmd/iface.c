@@ -1,3 +1,4 @@
+#include <err.h>
 #include <iface.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,7 +20,12 @@ typedef struct {
 typedef int (*action_t) (opts_t* opts);;
 
 static int do_stat(opts_t* opts) {
-	(void) opts;
+	for (size_t i = 0; i < opts->iface_count; i++) {
+		iface_t* const iface = &opts->ifaces[i];
+
+		printf("%s\n", iface->name);
+	}
+
 	return 0;
 }
 
@@ -44,12 +50,18 @@ int main(int argc, char* argv[]) {
 
 	// TODO parse commands
 
-	// populate interface list
+	// list interfaces
 	// we do this regardless of the command, as even if we're not listing interfaces, we still need to be able to search through them by name
+
+	if (iface_list(&opts.ifaces, &opts.iface_count) < 0) {
+		errx(EXIT_FAILURE, "failed to list interfaces: %s", iface_err_str());
+	}
 
 	// take action
 
 	int rv = action(&opts);
+
+	// no need to free interfaces
 
 	return rv < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 }

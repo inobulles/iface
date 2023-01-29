@@ -48,7 +48,7 @@ int iface_list(iface_t** ifaces_ref, size_t* iface_count_ref) {
 	struct ifaddrs* ifaddr;
 
 	if (getifaddrs(&ifaddr) < 0) {
-		return __emit_err("'getifaddrs' failed: %s", strerror(errno));
+		return __emit_err("getifaddrs: %s", strerror(errno));
 	}
 
 	// create list
@@ -94,15 +94,16 @@ int iface_list(iface_t** ifaces_ref, size_t* iface_count_ref) {
 
 		ifaces = realloc(ifaces, ++iface_count * sizeof *ifaces);
 
-		iface_t* iface = &ifaces[iface_count - 1];
+		iface_t* const iface = &ifaces[iface_count - 1];
 		memset(iface, 0, sizeof *iface);
 
 		iface->kind = kind;
 
 		// copy name
+		// we could directly point 'iface->name' to 'iface->ifr.ifr_name', but that's unstable as a future call to 'realloc' may shift us and make this pointer bad
 
 		strncpy(iface->ifr.ifr_name, ifa->ifa_name, MIN(sizeof iface->ifr.ifr_name, sizeof ifa->ifa_name));
-		iface->name = iface->ifr.ifr_name;
+		iface->name = strdup(iface->ifr.ifr_name);
 
 		iface->ifr.ifr_addr.sa_family = AF_INET;
 		iface->dgram_sock = socket(iface->ifr.ifr_addr.sa_family, SOCK_DGRAM, 0);
@@ -126,6 +127,10 @@ int iface_list(iface_t** ifaces_ref, size_t* iface_count_ref) {
 void iface_free(iface_t* ifaces, size_t iface_count) {
 	for (size_t i = 0; i < iface_count; i++) {
 		iface_t* const iface = &ifaces[i];
+
+		if (iface->name) {
+			free(iface->name);
+		}
 
 		if (iface->dgram_sock) {
 			close(iface->dgram_sock);
