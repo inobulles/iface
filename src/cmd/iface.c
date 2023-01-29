@@ -19,6 +19,14 @@ typedef struct {
 
 typedef int (*action_t) (opts_t* opts);;
 
+static char* strkind(iface_kind_t kind) {
+	if (kind == IFACE_KIND_LOOP) return "loop";
+	if (kind == IFACE_KIND_ETH ) return "eth";
+	if (kind == IFACE_KIND_USB ) return "usb";
+
+	return "other";
+}
+
 static int do_stat(opts_t* opts) {
 	for (size_t i = 0; i < opts->iface_count; i++) {
 		iface_t* const iface = &opts->ifaces[i];
@@ -30,7 +38,7 @@ static int do_stat(opts_t* opts) {
 
 		iface_get_flags(iface);
 
-		printf("%s\t%s\t%s\n", iface->name, iface->flags & IFACE_UP ? "ONLINE" : "OFFLINE", ip);
+		printf("%s (%s)\t%s\t%s\n", iface->name, strkind(iface->kind), iface->flags & IFACE_UP ? "ONLINE" : "OFFLINE", ip);
 	}
 
 	return 0;
