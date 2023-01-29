@@ -22,13 +22,19 @@ typedef int (*action_t) (opts_t* opts);;
 static int do_stat(opts_t* opts) {
 	for (size_t i = 0; i < opts->iface_count; i++) {
 		iface_t* const iface = &opts->ifaces[i];
+
 		char* ip = "n/a";
+		char* netmask = "n/a";
 
 		if (!iface_get_ip(iface)) {
 			ip = iface->ip;
 		}
 
-		printf("%s\t%s\n", iface->name, ip);
+		if (!iface_get_netmask(iface)) {
+			netmask = iface->netmask;
+		}
+
+		printf("%s\t%s\t%s\n", iface->name, ip, netmask);
 	}
 
 	return 0;
