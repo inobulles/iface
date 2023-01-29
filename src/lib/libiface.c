@@ -130,17 +130,15 @@ found:
 		// IP-layer interfaces will allow us to perform operations on them through a datagram socket
 
 		else if (family == AF_INET || family == AF_INET6) {
-			iface->dgram_sock = -1;
+			// don't open a second socket if we already have one
+			// TODO what if we want both IPv4 & IPv6 on a socket? should we force a choice to be made?
 
-			if (family != AF_INET && family != AF_INET6) {
-				continue;
-			}
+			if (!iface->dgram_sock) {
+				iface->dgram_sock = socket(family, SOCK_DGRAM, 0);
 
-			iface->dgram_sock = socket(family, SOCK_DGRAM, 0);
-
-			if (iface->dgram_sock < 0) {
-				__emit_err("failed to create datagram socket for interface %s: %s", iface->name, strerror(errno));
-				goto err;
+				if (iface->dgram_sock < 0) {
+					return __emit_err("failed to create datagram socket for interface %s: %s", iface->name, strerror(errno));
+				}
 			}
 		}
 
