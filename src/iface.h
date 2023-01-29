@@ -72,3 +72,5 @@ void iface_free(iface_t* ifaces, size_t iface_count);
 int iface_get_flags(iface_t* iface);
 int iface_get_ip(iface_t* iface);
 int iface_get_netmask(iface_t* iface);
+
+int iface_set_flags(iface_t* iface);

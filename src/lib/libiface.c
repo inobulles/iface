@@ -16,7 +16,11 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+// globals
+
 static char* err_str = NULL; // there's no real point in providing a library function to free this once a program is done - it's a global anyway
+
+// error handling
 
 char* iface_err_str(void) {
 	return err_str;
@@ -36,6 +40,8 @@ static int __emit_err(char* fmt, ...) {
 
 	return -1;
 }
+
+// interface listing
 
 int iface_list(iface_t** ifaces_ref, size_t* iface_count_ref) {
 	// check references for NULL-pointers
@@ -187,6 +193,8 @@ void iface_free(iface_t* ifaces, size_t iface_count) {
 	free(ifaces);
 }
 
+// getters
+
 int iface_get_flags(iface_t* iface) {
 	// make private copy of 'ifr' because 'SIOCGIFLAGS' scribbles on its union portion
 
@@ -200,6 +208,7 @@ int iface_get_flags(iface_t* iface) {
 	}
 
 	iface->flags = ifr.ifr_flags;
+	iface->ifr.ifr_flags = iface->flags;
 
 	return 0;
 }
@@ -229,6 +238,18 @@ int iface_get_netmask(iface_t* iface) {
 
 	if (!iface->netmask) {
 		return __emit_err("inet_ntoa('%s'): %s", iface->name, strerror(errno));
+	}
+
+	return 0;
+}
+
+// setters
+
+int iface_set_flags(iface_t* iface) {
+	iface->ifr.ifr_flags = iface->flags;
+
+	if (ioctl(iface->dgram_sock, SIOCSIFFLAGS, (caddr_t) &iface->ifr) < 0) {
+		return __emit_err("ioctl('%s', SIOCSIFFLAGS): %s", iface->name, strerror(errno));
 	}
 
 	return 0;

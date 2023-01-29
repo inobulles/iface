@@ -2,6 +2,7 @@
 #include <iface.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 static void usage(void) {
@@ -16,8 +17,6 @@ typedef struct {
 	iface_t* ifaces;
 	size_t iface_count;
 } opts_t;
-
-typedef int (*action_t) (opts_t* opts);;
 
 static char* strkind(iface_kind_t kind) {
 	if (kind == IFACE_KIND_LOOP) return "loop";
@@ -45,7 +44,6 @@ static int do_stat(opts_t* opts) {
 }
 
 int main(int argc, char* argv[]) {
-	action_t action = do_stat;
 	opts_t opts = { 0 };
 
 	// get options
@@ -63,20 +61,41 @@ int main(int argc, char* argv[]) {
 	argc -= optind;
 	argv += optind;
 
-	// TODO parse commands
-
 	// list interfaces
-	// we do this regardless of the command, as even if we're not listing interfaces, we still need to be able to search through them by name
+	// we do this regardless of the instruction, as even if we're not listing interfaces, we still need to be able to search through them by name
 
 	if (iface_list(&opts.ifaces, &opts.iface_count) < 0) {
 		errx(EXIT_FAILURE, "failed to list interfaces: %s", iface_err_str());
 	}
 
-	// take action
+	// if no instructions are passed, assume we just want to list interfaces
 
-	int rv = action(&opts);
+	if (argc <= 0) {
+		return do_stat(&opts) < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
+	}
+
+	// parse instructions
+
+	while (argc --> 0) {
+		char* const instr = *argv++;
+		int rv = EXIT_FAILURE; // I'm a pessimist
+
+		if (!strcmp(instr, "list")) {
+			rv = do_stat(&opts);
+		}
+
+		else {
+			usage();
+		}
+
+		// stop here if there was an error in the execution of an instruction
+
+		if (rv != EXIT_SUCCESS) {
+			return rv;
+		}
+	}
 
 	// no need to free interfaces
 
-	return rv < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
+	return EXIT_SUCCESS;
 }
