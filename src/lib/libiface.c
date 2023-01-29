@@ -9,9 +9,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioccom.h>
 #include <sys/param.h>
 #include <sys/socket.h>
 #include <sys/sockio.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 static char* err_str = NULL; // there's no real point in providing a library function to free this once a program is done - it's a global anyway
@@ -185,6 +187,23 @@ void iface_free(iface_t* ifaces, size_t iface_count) {
 	}
 
 	free(ifaces);
+}
+
+int iface_get_flags(iface_t* iface) {
+	// make private copy of 'ifr' because 'SIOCGIFLAGS' scribbles on its union portion
+
+	struct ifreq ifr;
+	memcpy(&ifr, &iface->ifr, sizeof ifr);
+
+	// actually get flags
+
+	if (ioctl(iface->dgram_sock, SIOCGIFFLAGS, (caddr_t) &ifr) < 0) {
+		return __emit_err("ioctl('%s', SIOCGIFFLAGS): %s", iface->name, strerror(errno));
+	}
+
+	iface->flags = ifr.ifr_flags;
+
+	return 0;
 }
 
 int iface_get_ip(iface_t* iface) {
