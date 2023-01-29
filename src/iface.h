@@ -18,10 +18,18 @@ typedef struct {
 
 	int dgram_sock;
 	struct ifreq ifr;
+
+	// 'AF_INET/6' interfaces
+
+	char* ip;
+	char* netmask;
 } iface_t;
 
 // functions
 
 char* iface_err_str(void);
+
 int iface_list(iface_t** ifaces_ref, size_t* count_ref);
 void iface_free(iface_t* ifaces, size_t iface_count);
+
+int iface_get_ip(iface_t* iface);

@@ -1,14 +1,17 @@
+#include <arpa/inet.h>
 #include <errno.h>
 #include <iface.h>
 #include <ifaddrs.h>
 #include <net/if_dl.h>
 #include <net/if_types.h>
+#include <netinet/in.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/param.h>
 #include <sys/socket.h>
+#include <sys/sockio.h>
 #include <unistd.h>
 
 static char* err_str = NULL; // there's no real point in providing a library function to free this once a program is done - it's a global anyway
@@ -63,41 +66,33 @@ int iface_list(iface_t** ifaces_ref, size_t* iface_count_ref) {
 			continue;
 		}
 
+		// small explanations on families:
+		// 'AF_LINK' family interfaces are interfaces from the POV of the link-layer
+		// 'AF_INET/6' family interfaces are interfaces from the POV of the IP-layer
+
 		sa_family_t const family = ifa->ifa_addr->sa_family;
 
-		if (family != AF_LINK) { // we're looking for link interfaces here
-			continue;
+		// if interface with same name already exits, just add the following information to it rather than creating a new entry
+
+		iface_t* iface;
+
+		for (size_t i = 0; i < iface_count; i++) {
+			iface = &ifaces[i];
+
+			if (!strcmp(iface->name, ifa->ifa_name)) {
+				goto found;
+			}
 		}
 
-		// get interface type
-
-		struct sockaddr_dl* const sdl = (void*) ifa->ifa_addr;
-		iface_kind_t kind = IFACE_KIND_OTHER;
-
-		if (sdl->sdl_type == IFT_LOOP) {
-			kind = IFACE_KIND_LOOP;
-		}
-
-		else if (sdl->sdl_type == IFT_USB) {
-			kind = IFACE_KIND_USB;
-		}
-
-		else if (sdl->sdl_type == IFT_ETHER) {
-			kind = IFACE_KIND_ETH;
-		}
-
-		else {
-			fprintf(stderr, "TODO iface_list: unknown interface type for %s: %d\n", ifa->ifa_name, sdl->sdl_type);
-		}
-
-		// create interface object
+		// interface not found
+		// create it
 
 		ifaces = realloc(ifaces, ++iface_count * sizeof *ifaces);
 
-		iface_t* const iface = &ifaces[iface_count - 1];
+		iface = &ifaces[iface_count - 1];
 		memset(iface, 0, sizeof *iface);
 
-		iface->kind = kind;
+		iface->ifr.ifr_addr.sa_family = family;
 
 		// copy name
 		// we could directly point 'iface->name' to 'iface->ifr.ifr_name', but that's unstable as a future call to 'realloc' may shift us and make this pointer bad
@@ -105,14 +100,51 @@ int iface_list(iface_t** ifaces_ref, size_t* iface_count_ref) {
 		strncpy(iface->ifr.ifr_name, ifa->ifa_name, MIN(sizeof iface->ifr.ifr_name, sizeof ifa->ifa_name));
 		iface->name = strdup(iface->ifr.ifr_name);
 
-		iface->ifr.ifr_addr.sa_family = AF_INET;
-		iface->dgram_sock = socket(iface->ifr.ifr_addr.sa_family, SOCK_DGRAM, 0);
+found:
 
-		if (iface->dgram_sock < 0) {
-			__emit_err("failed to create datagram socket for interface %s: %s", iface->name, strerror(errno));
+		// link-layer interfaces will tell us the kind of interface we're dealing with
 
-			iface_free(ifaces, iface_count);
-			return -1;
+		if (family == AF_LINK) {
+			struct sockaddr_dl* const sdl = (void*) ifa->ifa_addr;
+			iface->kind = IFACE_KIND_OTHER;
+
+			if (sdl->sdl_type == IFT_LOOP) {
+				iface->kind = IFACE_KIND_LOOP;
+			}
+
+			else if (sdl->sdl_type == IFT_USB) {
+				iface->kind = IFACE_KIND_USB;
+			}
+
+			else if (sdl->sdl_type == IFT_ETHER) {
+				iface->kind = IFACE_KIND_ETH;
+			}
+
+			else {
+				fprintf(stderr, "TODO iface_list: unknown interface type for %s: %d\n", ifa->ifa_name, sdl->sdl_type);
+			}
+		}
+
+		// IP-layer interfaces will allow us to perform operations on them through a datagram socket
+
+		else if (family == AF_INET || family == AF_INET6) {
+			iface->dgram_sock = -1;
+
+			if (family != AF_INET && family != AF_INET6) {
+				continue;
+			}
+
+			iface->dgram_sock = socket(family, SOCK_DGRAM, 0);
+
+			if (iface->dgram_sock < 0) {
+				__emit_err("failed to create datagram socket for interface %s: %s", iface->name, strerror(errno));
+				goto err;
+			}
+		}
+
+		else {
+			__emit_err("unknown address family %d", family);
+			goto err;
 		}
 	}
 
@@ -122,6 +154,11 @@ int iface_list(iface_t** ifaces_ref, size_t* iface_count_ref) {
 	*iface_count_ref = iface_count;
 
 	return 0;
+
+err:
+
+	iface_free(ifaces, iface_count);
+	return -1;
 }
 
 void iface_free(iface_t* ifaces, size_t iface_count) {
@@ -135,7 +172,32 @@ void iface_free(iface_t* ifaces, size_t iface_count) {
 		if (iface->dgram_sock) {
 			close(iface->dgram_sock);
 		}
+
+		// 'AF_INET/6' interfaces
+
+		if (iface->ip) {
+			free(iface->ip);
+		}
+
+		if (iface->netmask) {
+			free(iface->ip);
+		}
 	}
 
 	free(ifaces);
+}
+
+int iface_get_ip(iface_t* iface) {
+	if (ioctl(iface->dgram_sock, SIOCGIFADDR, &iface->ifr) < 0) {
+		return __emit_err("ioctl('%s', SIOCGIFADDR): %s", iface->name, strerror(errno));
+	}
+
+	struct sockaddr_in* const ip = (void*) &iface->ifr.ifr_addr;
+	iface->ip = inet_ntoa(ip->sin_addr);
+
+	if (!iface->ip) {
+		return __emit_err("inet_ntoa('%s'): %s", iface->name, strerror(errno));
+	}
+
+	return 0;
 }
