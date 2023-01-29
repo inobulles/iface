@@ -33,3 +33,4 @@ int iface_list(iface_t** ifaces_ref, size_t* count_ref);
 void iface_free(iface_t* ifaces, size_t iface_count);
 
 int iface_get_ip(iface_t* iface);
+int iface_get_netmask(iface_t* iface);

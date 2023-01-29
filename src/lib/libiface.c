@@ -180,7 +180,7 @@ void iface_free(iface_t* ifaces, size_t iface_count) {
 		}
 
 		if (iface->netmask) {
-			free(iface->ip);
+			free(iface->netmask);
 		}
 	}
 
@@ -193,9 +193,24 @@ int iface_get_ip(iface_t* iface) {
 	}
 
 	struct sockaddr_in* const ip = (void*) &iface->ifr.ifr_addr;
-	iface->ip = inet_ntoa(ip->sin_addr);
+	iface->ip = strdup(inet_ntoa(ip->sin_addr));
 
 	if (!iface->ip) {
+		return __emit_err("inet_ntoa('%s'): %s", iface->name, strerror(errno));
+	}
+
+	return 0;
+}
+
+int iface_get_netmask(iface_t* iface) {
+	if (ioctl(iface->dgram_sock, SIOCGIFNETMASK, &iface->ifr) < 0) {
+		return __emit_err("ioctl('%s', SIOCGIFNETMASK): %s", iface->name, strerror(errno));
+	}
+
+	struct sockaddr_in* const netmask = (void*) &iface->ifr.ifr_addr;
+	iface->netmask = strdup(inet_ntoa(netmask->sin_addr));
+
+	if (!iface->netmask) {
 		return __emit_err("inet_ntoa('%s'): %s", iface->name, strerror(errno));
 	}
 
