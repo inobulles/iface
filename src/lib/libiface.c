@@ -378,3 +378,29 @@ int iface_set_flags(iface_t* iface) {
 
 	return 0;
 }
+
+// interface creation
+
+int iface_create(iface_t* iface) {
+	struct ifreq ifr = { 0 };
+	strncpy(ifr.ifr_name, iface->name, sizeof ifr.ifr_name);
+
+#ifdef SIOCIFCREATE2
+	unsigned long const req = SIOCIFCREATE2;
+	char const* const req_str = "SIOCIFCREATE2";
+#else
+	unsigned long const req = SIOCIFCREATE;
+	char const* const req_str = "SIOCIFCREATE";
+#endif
+
+	if (!ioctl(iface->dgram_sock, req, &ifr)) {
+		memcpy(&iface->ifr, &ifr, sizeof ifr);
+		return 0;
+	}
+
+	if (errno == EEXIST) {
+		return __emit_err("ioctl('%s', %s): Interface already exists", iface->name, req_str, strerror(errno));
+	}
+
+	return __emit_err("ioctl('%s', %s): %s", iface->name, req_str, strerror(errno));
+}
