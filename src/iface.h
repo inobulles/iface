@@ -117,3 +117,4 @@ int iface_get_netmask(iface_t* iface);
 int iface_set_flags(iface_t* iface);
 
 int iface_create(iface_t* iface);
+int iface_destroy(iface_t* iface);

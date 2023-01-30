@@ -297,7 +297,7 @@ int iface_get_flags(iface_t* iface) {
 	// actually get flags
 
 	if (ioctl(iface->dgram_sock, SIOCGIFFLAGS, (caddr_t) &ifr) < 0) {
-		return __emit_err("ioctl('%s', SIOCGIFFLAGS): %s", iface->name, strerror(errno));
+		return __emit_err("ioctl(SIOCGIFFLAGS, '%s'): %s", iface->name, strerror(errno));
 	}
 
 	iface->flags = ifr.ifr_flags;
@@ -308,7 +308,7 @@ int iface_get_flags(iface_t* iface) {
 
 static int __iface_get_ipv4(iface_t* iface) {
 	if (ioctl(iface->dgram_sock, SIOCGIFADDR, &iface->ifr) < 0) {
-		return __emit_err("ioctl('%s', SIOCGIFADDR): %s", iface->name, strerror(errno));
+		return __emit_err("ioctl(SIOCGIFADDR, '%s'): %s", iface->name, strerror(errno));
 	}
 
 	struct sockaddr_in const* const ip = (void*) &iface->ifr.ifr_addr;
@@ -354,7 +354,7 @@ int iface_get_ip(iface_t* iface) {
 
 int iface_get_netmask(iface_t* iface) {
 	if (ioctl(iface->dgram_sock, SIOCGIFNETMASK, &iface->ifr) < 0) {
-		return __emit_err("ioctl('%s', SIOCGIFNETMASK): %s", iface->name, strerror(errno));
+		return __emit_err("ioctl(SIOCGIFNETMASK, '%s'): %s", iface->name, strerror(errno));
 	}
 
 	struct sockaddr_in* const netmask = (void*) &iface->ifr.ifr_addr;
@@ -373,7 +373,7 @@ int iface_set_flags(iface_t* iface) {
 	iface->ifr.ifr_flags = iface->flags;
 
 	if (ioctl(iface->dgram_sock, SIOCSIFFLAGS, (caddr_t) &iface->ifr) < 0) {
-		return __emit_err("ioctl('%s', SIOCSIFFLAGS): %s", iface->name, strerror(errno));
+		return __emit_err("ioctl(SIOCSIFFLAGS, '%s'): %s", iface->name, strerror(errno));
 	}
 
 	return 0;
@@ -399,8 +399,16 @@ int iface_create(iface_t* iface) {
 	}
 
 	if (errno == EEXIST) {
-		return __emit_err("ioctl('%s', %s): Interface already exists", iface->name, req_str, strerror(errno));
+		return __emit_err("ioctl(%s, '%s'): interface already exists", req_str, iface->name, strerror(errno));
 	}
 
-	return __emit_err("ioctl('%s', %s): %s", iface->name, req_str, strerror(errno));
+	return __emit_err("ioctl(%s, '%s'): %s", req_str, iface->name, strerror(errno));
+}
+
+int iface_destroy(iface_t* iface) {
+	if (ioctl(iface->dgram_sock, SIOCIFDESTROY, &iface->ifr) < 0) {
+		return __emit_err("ioctl(SIOCIFDESTROY, '%s'): %s", iface->name, strerror(errno));
+	}
+
+	return 0;
 }
