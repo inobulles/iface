@@ -1,3 +1,4 @@
+#include <arpa/inet.h>
 #include <err.h>
 #include <iface.h>
 #include <stdio.h>
@@ -7,7 +8,8 @@
 
 static void usage(void) {
 	fprintf(stderr,
-		"usage: %1$s [-v]\n",
+		"usage: %1$s [list]\n"
+		"       %1$s enable interface\n",
 	getprogname());
 
 	exit(EXIT_FAILURE);
@@ -16,6 +18,10 @@ static void usage(void) {
 typedef struct {
 	iface_t* ifaces;
 	size_t iface_count;
+
+	// this is the interface we're operating on
+
+	iface_t* iface;
 } opts_t;
 
 static char* strkind(iface_kind_t kind) {
@@ -26,7 +32,42 @@ static char* strkind(iface_kind_t kind) {
 	return "other";
 }
 
-static int do_stat(opts_t* opts) {
+static iface_t* search_iface(opts_t* opts, char const* name) {
+	if (!name) {
+		usage();
+	}
+
+	for (size_t i = 0; i < opts->iface_count; i++) {
+		iface_t* const iface = &opts->ifaces[i];
+
+		if (!strcmp(iface->name, name)) {
+			return iface;
+		}
+	}
+
+	errx(EXIT_FAILURE, "interface '%s' not found", name);
+}
+
+// instructions
+// TODO I'd like this to be in a separate file
+
+static int do_enable(opts_t* opts) {
+	iface_t* const iface = opts->iface;
+
+	if (iface_get_flags(iface) < 0) {
+		errx(EXIT_FAILURE, "iface_get_flags('%s'): %s", iface->name, iface_err_str());
+	}
+
+	iface->flags &= IFACE_UP;
+
+	if (iface_set_flags(iface) < 0) {
+		errx(EXIT_FAILURE, "iface_set_flags('%s'): %s", iface->name, iface_err_str());
+	}
+
+	return 0;
+}
+
+static int do_list(opts_t* opts) {
 	for (size_t i = 0; i < opts->iface_count; i++) {
 		iface_t* const iface = &opts->ifaces[i];
 		char* ip = "n/a";
@@ -71,7 +112,7 @@ int main(int argc, char* argv[]) {
 	// if no instructions are passed, assume we just want to list interfaces
 
 	if (argc <= 0) {
-		return do_stat(&opts) < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
+		return do_list(&opts) < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 	}
 
 	// parse instructions
@@ -81,7 +122,12 @@ int main(int argc, char* argv[]) {
 		int rv = EXIT_FAILURE; // I'm a pessimist
 
 		if (!strcmp(instr, "list")) {
-			rv = do_stat(&opts);
+			rv = do_list(&opts);
+		}
+
+		else if (!strcmp(instr, "enable")) {
+			opts.iface = (argc--, search_iface(&opts, *argv++));
+			rv = do_enable(&opts);
 		}
 
 		else {
