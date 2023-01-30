@@ -19,10 +19,6 @@ static void usage(void) {
 typedef struct {
 	iface_t** ifaces;
 	size_t iface_count;
-
-	// this is the interface we're operating on
-
-	iface_t* iface;
 } opts_t;
 
 static iface_t* search_iface(opts_t* opts, char const* name) {
@@ -44,8 +40,9 @@ static iface_t* search_iface(opts_t* opts, char const* name) {
 // instructions
 // TODO I'd like this to be in a separate file
 
-static int do_enable(opts_t* opts) {
-	iface_t* const iface = opts->iface;
+static int do_enable(opts_t* opts, int* argc_ref, char*** argv_ref) {
+	char* const name = ((*argc_ref)--, *((*argv_ref)++));
+	iface_t* const iface = search_iface(opts, name);
 
 	if (iface_get_flags(iface) < 0) {
 		errx(EXIT_FAILURE, "iface_get_flags('%s'): %s", iface->name, iface_err_str());
@@ -60,8 +57,9 @@ static int do_enable(opts_t* opts) {
 	return 0;
 }
 
-static int do_disable(opts_t* opts) {
-	iface_t* const iface = opts->iface;
+static int do_disable(opts_t* opts, int* argc_ref, char*** argv_ref) {
+	char* const name = ((*argc_ref)--, *((*argv_ref)++));
+	iface_t* const iface = search_iface(opts, name);
 
 	if (iface_get_flags(iface) < 0) {
 		errx(EXIT_FAILURE, "iface_get_flags('%s'): %s", iface->name, iface_err_str());
@@ -135,13 +133,11 @@ int main(int argc, char* argv[]) {
 		int rv = EXIT_FAILURE; // I'm a pessimist
 
 		if (!strcmp(instr, "disable")) {
-			opts.iface = (argc--, search_iface(&opts, *argv++));
-			rv = do_disable(&opts);
+			rv = do_disable(&opts, &argc, &argv);
 		}
 
 		else if (!strcmp(instr, "enable")) {
-			opts.iface = (argc--, search_iface(&opts, *argv++));
-			rv = do_enable(&opts);
+			rv = do_enable(&opts, &argc, &argv);
 		}
 
 		else if (!strcmp(instr, "list")) {
