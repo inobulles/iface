@@ -23,7 +23,10 @@ static char* err_str = NULL; // there's no real point in providing a library fun
 // error handling
 
 char* iface_err_str(void) {
-	return err_str;
+	char* const rv = err_str;
+	err_str = NULL;
+
+	return rv;
 }
 
 static int __emit_err(char* fmt, ...) {
@@ -41,9 +44,107 @@ static int __emit_err(char* fmt, ...) {
 	return -1;
 }
 
+// stringification functions
+
+char* iface_str_kind(iface_kind_t kind) {
+	if (kind == IFACE_KIND_LOOP) return "loop";
+	if (kind == IFACE_KIND_ETH ) return "eth";
+	if (kind == IFACE_KIND_USB ) return "usb";
+
+	return "other";
+}
+
+char* iface_str_family(iface_family_t family) {
+	if (family == IFACE_FAMILY_UNSPEC) return "unspecified";
+	if (family == IFACE_FAMILY_UNIX  ) return "UNIX";
+	if (family == IFACE_FAMILY_IPV4  ) return "IPv4";
+	if (family == IFACE_FAMILY_IPV6  ) return "IPv6";
+
+	return "other";
+}
+
+// interface object handling
+
+iface_t* iface_new(char* name) {
+	iface_t* const iface = calloc(1, sizeof *iface);
+
+	iface->name = strdup(name);
+	iface->family = IFACE_FAMILY_UNSPEC;
+
+	strncpy(iface->ifr.ifr_name, name, sizeof iface->ifr.ifr_name);
+
+	return iface;
+}
+
+int iface_upgrade_family(iface_t* iface, iface_family_t family) {
+	if (iface->family == family) {
+		return 0;
+	}
+
+	iface->family = family;
+
+	// we use the 'in6_ifr' member for IPv6, 'ifr' for anything else
+
+	if (family == IFACE_FAMILY_IPV6) {
+		iface->in6_ifr.ifr_addr.sin6_family = (sa_family_t) family;
+	}
+
+	else {
+		iface->ifr.ifr_addr.sa_family = (sa_family_t) family;
+	}
+
+	// create datagram socket
+
+	int const dgram_sock = socket((sa_family_t) family, SOCK_DGRAM, 0);
+
+	if (dgram_sock < 0) {
+		return __emit_err("failed to create '%s' datagram socket: %s", iface_str_family(family), strerror(errno));
+;
+	}
+
+	// if we already had one, close it
+	// XXX this isn't super ideal because that means we're gonna be opening/closing a lot of sockets if we progressively upgrade the interface's family, but w/e
+
+	if (iface->dgram_sock > 0) {
+		close(iface->dgram_sock);
+	}
+
+	iface->dgram_sock = dgram_sock;
+
+	return 0;
+}
+
+void iface_free(iface_t* iface) {
+	if (iface->name) {
+		free(iface->name);
+	}
+
+	if (iface->dgram_sock > 0) {
+		close(iface->dgram_sock);
+	}
+
+	if (iface->ip) {
+		free(iface->ip);
+	}
+
+	if (iface->netmask) {
+		free(iface->netmask);
+	}
+
+	for (size_t i = 0; i < iface->ipv6_count; i++) {
+		free(iface->ipv6s[i]);
+	}
+
+	if (iface->ipv6s) {
+		free(iface->ipv6s);
+	}
+
+	free(iface->name);
+}
+
 // interface listing
 
-int iface_list(iface_t** ifaces_ref, size_t* iface_count_ref) {
+int iface_list(iface_t*** ifaces_ref, size_t* iface_count_ref) {
 	// check references for NULL-pointers
 
 	if (!ifaces_ref) {
@@ -65,7 +166,7 @@ int iface_list(iface_t** ifaces_ref, size_t* iface_count_ref) {
 	// create list
 
 	size_t iface_count = 0;
-	iface_t* ifaces = NULL;
+	iface_t** ifaces = NULL;
 
 	// traverse through interfaces linked list
 
@@ -78,14 +179,15 @@ int iface_list(iface_t** ifaces_ref, size_t* iface_count_ref) {
 		// 'AF_LINK' family interfaces are interfaces from the POV of the link-layer
 		// 'AF_INET/6' family interfaces are interfaces from the POV of the IP-layer
 
-		sa_family_t const family = ifa->ifa_addr->sa_family;
+		sa_family_t const af = ifa->ifa_addr->sa_family;
+		iface_family_t const family = af;
 
 		// if interface with same name already exits, just add the following information to it rather than creating a new entry
 
 		iface_t* iface;
 
 		for (size_t i = 0; i < iface_count; i++) {
-			iface = &ifaces[i];
+			iface = ifaces[i];
 
 			if (!strcmp(iface->name, ifa->ifa_name)) {
 				goto found;
@@ -95,12 +197,10 @@ int iface_list(iface_t** ifaces_ref, size_t* iface_count_ref) {
 		// interface not found
 		// create it
 
+		iface = iface_new(ifa->ifa_name);
+
 		ifaces = realloc(ifaces, ++iface_count * sizeof *ifaces);
-
-		iface = &ifaces[iface_count - 1];
-		memset(iface, 0, sizeof *iface);
-
-		iface->ifr.ifr_addr.sa_family = family;
+		ifaces[iface_count - 1] = iface;
 
 		// copy name
 		// we could directly point 'iface->name' to 'iface->ifr.ifr_name', but that's unstable as a future call to 'realloc' may shift us and make this pointer bad
@@ -110,9 +210,9 @@ int iface_list(iface_t** ifaces_ref, size_t* iface_count_ref) {
 
 found:
 
-		// link-layer interfaces will tell us the kind of interface we're dealing with
+		// link-layer interfaces will tell us the underlying kind of interface we're dealing with
 
-		if (family == AF_LINK) {
+		if (af == AF_LINK) {
 			struct sockaddr_dl* const sdl = (void*) ifa->ifa_addr;
 			iface->kind = IFACE_KIND_OTHER;
 
@@ -133,23 +233,34 @@ found:
 			}
 		}
 
-		// IP-layer interfaces will allow us to perform operations on them through a datagram socket
+		// (attempt to) upgrade the interface family if IPv4/6 interface
 
-		else if (family == AF_INET || family == AF_INET6) {
-			// don't open a second socket if we already have one
-			// TODO what if we want both IPv4 & IPv6 on a socket? should we force a choice to be made?
+		else if (family == IFACE_FAMILY_IPV4 || family == IFACE_FAMILY_IPV6) {
+			if (iface_upgrade_family(iface, family) < 0) {
+				goto err;
+			}
 
-			if (!iface->dgram_sock) {
-				iface->dgram_sock = socket(family, SOCK_DGRAM, 0);
+			// if IPv6, add IP address
+			// with IPv6, we can have multiple IP's per interface
 
-				if (iface->dgram_sock < 0) {
-					return __emit_err("failed to create datagram socket for interface %s: %s", iface->name, strerror(errno));
+			if (family == IFACE_FAMILY_IPV6) {
+				struct sockaddr_in6 const* const ip = (void*) ifa->ifa_addr;
+				char buf[40];
+
+				if (!inet_ntop(AF_INET6, &ip->sin6_addr, buf, sizeof buf)) {
+					__emit_err("inet_ntop(AF_INET6, '%s'): %s", iface->name, strerror(errno));
+					goto err;
 				}
+
+				iface->ipv6s = realloc(iface->ipv6s, ++iface->ipv6_count * sizeof *iface->ipv6s);
+				iface->ipv6s[iface->ipv6_count - 1] = strdup(buf);
 			}
 		}
 
+		// error otherwise
+
 		else {
-			__emit_err("unknown address family %d", family);
+			__emit_err("unknown interface family '%s' (%d)", iface_str_family(family), family);
 			goto err;
 		}
 	}
@@ -163,31 +274,13 @@ found:
 
 err:
 
-	iface_free(ifaces, iface_count);
+	iface_list_free(ifaces, iface_count);
 	return -1;
 }
 
-void iface_free(iface_t* ifaces, size_t iface_count) {
+void iface_list_free(iface_t** ifaces, size_t iface_count) {
 	for (size_t i = 0; i < iface_count; i++) {
-		iface_t* const iface = &ifaces[i];
-
-		if (iface->name) {
-			free(iface->name);
-		}
-
-		if (iface->dgram_sock) {
-			close(iface->dgram_sock);
-		}
-
-		// 'AF_INET/6' interfaces
-
-		if (iface->ip) {
-			free(iface->ip);
-		}
-
-		if (iface->netmask) {
-			free(iface->netmask);
-		}
+		iface_free(ifaces[i]);
 	}
 
 	free(ifaces);
@@ -213,19 +306,50 @@ int iface_get_flags(iface_t* iface) {
 	return 0;
 }
 
-int iface_get_ip(iface_t* iface) {
+static int __iface_get_ipv4(iface_t* iface) {
 	if (ioctl(iface->dgram_sock, SIOCGIFADDR, &iface->ifr) < 0) {
 		return __emit_err("ioctl('%s', SIOCGIFADDR): %s", iface->name, strerror(errno));
 	}
 
-	struct sockaddr_in* const ip = (void*) &iface->ifr.ifr_addr;
-	iface->ip = strdup(inet_ntoa(ip->sin_addr));
+	struct sockaddr_in const* const ip = (void*) &iface->ifr.ifr_addr;
+	char* buf = inet_ntoa(ip->sin_addr);
 
-	if (!iface->ip) {
+	if (!buf) {
 		return __emit_err("inet_ntoa('%s'): %s", iface->name, strerror(errno));
 	}
 
+	if (iface->ip) {
+		free(iface->ip);
+	}
+
+	iface->ip = strdup(buf);
+
 	return 0;
+}
+
+static int __iface_get_ipv6(iface_t* iface) {
+	// 'SIOCGIFADDR_IN6' is deprecated and returns an 'EADDRNOTAVAIL' error each time (cf. 'sys/netinet6/in6.c')
+	// besides, we should steer away from ioctl's as they have some limitations (such as not being able to convey multiple addresses on one interface)
+
+	if (iface->ipv6_count <= 0) {
+		return __emit_err("no IPv6 addresses");
+	}
+
+	iface->ip = iface->ipv6s[iface->ipv6_count - 1];
+
+	return 0;
+}
+
+int iface_get_ip(iface_t* iface) {
+	if (iface->family == IFACE_FAMILY_IPV4) {
+		return __iface_get_ipv4(iface);
+	}
+
+	if (iface->family == IFACE_FAMILY_IPV6) {
+		return __iface_get_ipv6(iface);
+	}
+
+	return __emit_err("unsupported family '%s' for getting IP address", iface_str_family(iface->family));
 }
 
 int iface_get_netmask(iface_t* iface) {
