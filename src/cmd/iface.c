@@ -9,6 +9,7 @@
 static void usage(void) {
 	fprintf(stderr,
 		"usage: %1$s [list]\n"
+		"       %1$s disable interface\n"
 		"       %1$s enable interface\n",
 	getprogname());
 
@@ -58,7 +59,23 @@ static int do_enable(opts_t* opts) {
 		errx(EXIT_FAILURE, "iface_get_flags('%s'): %s", iface->name, iface_err_str());
 	}
 
-	iface->flags &= IFACE_UP;
+	iface->flags |= IFACE_UP;
+
+	if (iface_set_flags(iface) < 0) {
+		errx(EXIT_FAILURE, "iface_set_flags('%s'): %s", iface->name, iface_err_str());
+	}
+
+	return 0;
+}
+
+static int do_disable(opts_t* opts) {
+	iface_t* const iface = opts->iface;
+
+	if (iface_get_flags(iface) < 0) {
+		errx(EXIT_FAILURE, "iface_get_flags('%s'): %s", iface->name, iface_err_str());
+	}
+
+	iface->flags &= ~IFACE_UP;
 
 	if (iface_set_flags(iface) < 0) {
 		errx(EXIT_FAILURE, "iface_set_flags('%s'): %s", iface->name, iface_err_str());
@@ -128,6 +145,11 @@ int main(int argc, char* argv[]) {
 		else if (!strcmp(instr, "enable")) {
 			opts.iface = (argc--, search_iface(&opts, *argv++));
 			rv = do_enable(&opts);
+		}
+
+		else if (!strcmp(instr, "disable")) {
+			opts.iface = (argc--, search_iface(&opts, *argv++));
+			rv = do_disable(&opts);
 		}
 
 		else {
