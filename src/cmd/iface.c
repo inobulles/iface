@@ -40,19 +40,25 @@ static iface_t* search_iface(opts_t* opts, char const* name) {
 // instructions
 // TODO I'd like this to be in a separate file
 
-static int do_enable(opts_t* opts, int* argc_ref, char*** argv_ref) {
+static int do_create(opts_t* opts, int* argc_ref, char*** argv_ref) {
 	char* const name = ((*argc_ref)--, *((*argv_ref)++));
-	iface_t* const iface = search_iface(opts, name);
+	(void) opts;
 
-	if (iface_get_flags(iface) < 0) {
-		errx(EXIT_FAILURE, "iface_get_flags('%s'): %s", iface->name, iface_err_str());
+	iface_t* const iface = iface_new(name);
+
+	if (!iface) {
+		errx(EXIT_FAILURE, "iface_new('%s'): %s", name, iface_err_str());
 	}
 
-	iface->flags |= IFACE_FLAG_ONLINE;
-
-	if (iface_set_flags(iface) < 0) {
-		errx(EXIT_FAILURE, "iface_set_flags('%s'): %s", iface->name, iface_err_str());
+	if (iface_upgrade_family(iface, IFACE_FAMILY_IPV6) < 0) {
+		errx(EXIT_FAILURE, "iface_upgrade_family('%s', IFACE_FAMILY_IPV6): %s", name, iface_err_str());
 	}
+
+	if (iface_create(iface) < 0) {
+		errx(EXIT_FAILURE, "iface_create('%s'): %s", name, iface_err_str());
+	}
+
+	iface_free(iface);
 
 	return 0;
 }
@@ -66,6 +72,23 @@ static int do_disable(opts_t* opts, int* argc_ref, char*** argv_ref) {
 	}
 
 	iface->flags &= ~IFACE_FLAG_ONLINE;
+
+	if (iface_set_flags(iface) < 0) {
+		errx(EXIT_FAILURE, "iface_set_flags('%s'): %s", iface->name, iface_err_str());
+	}
+
+	return 0;
+}
+
+static int do_enable(opts_t* opts, int* argc_ref, char*** argv_ref) {
+	char* const name = ((*argc_ref)--, *((*argv_ref)++));
+	iface_t* const iface = search_iface(opts, name);
+
+	if (iface_get_flags(iface) < 0) {
+		errx(EXIT_FAILURE, "iface_get_flags('%s'): %s", iface->name, iface_err_str());
+	}
+
+	iface->flags |= IFACE_FLAG_ONLINE;
 
 	if (iface_set_flags(iface) < 0) {
 		errx(EXIT_FAILURE, "iface_set_flags('%s'): %s", iface->name, iface_err_str());
@@ -132,7 +155,11 @@ int main(int argc, char* argv[]) {
 		char* const instr = *argv++;
 		int rv = EXIT_FAILURE; // I'm a pessimist
 
-		if (!strcmp(instr, "disable")) {
+		if (!strcmp(instr, "create")) {
+			rv = do_create(&opts, &argc, &argv);
+		}
+
+		else if (!strcmp(instr, "disable")) {
 			rv = do_disable(&opts, &argc, &argv);
 		}
 
