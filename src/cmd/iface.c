@@ -63,6 +63,17 @@ static int do_create(opts_t* opts, int* argc_ref, char*** argv_ref) {
 	return 0;
 }
 
+static int do_destroy(opts_t* opts, int* argc_ref, char*** argv_ref) {
+	char* const name = ((*argc_ref)--, *((*argv_ref)++));
+	iface_t* const iface = search_iface(opts, name);
+
+	if (iface_destroy(iface) < 0) {
+		errx(EXIT_FAILURE, "iface_destroy('%s'): %s", iface->name, iface_err_str());
+	}
+
+	return 0;
+}
+
 static int do_disable(opts_t* opts, int* argc_ref, char*** argv_ref) {
 	char* const name = ((*argc_ref)--, *((*argv_ref)++));
 	iface_t* const iface = search_iface(opts, name);
@@ -157,6 +168,10 @@ int main(int argc, char* argv[]) {
 
 		if (!strcmp(instr, "create")) {
 			rv = do_create(&opts, &argc, &argv);
+		}
+
+		else if (!strcmp(instr, "destroy")) {
+			rv = do_destroy(&opts, &argc, &argv);
 		}
 
 		else if (!strcmp(instr, "disable")) {
