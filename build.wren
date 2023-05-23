@@ -47,10 +47,10 @@ class Runner {
 // installation map
 
 var install = {
-	"iface":       "%(Meta.prefix())/bin/iface",
-	"libiface.a":  "%(Meta.prefix())/lib/libiface.a",
-	"libiface.so": "%(Meta.prefix())/lib/libiface.so",
-	"iface.h":     "%(Meta.prefix())/include/iface.h",
+	"iface":       "bin/iface",
+	"libiface.a":  "lib/libiface.a",
+	"libiface.so": "lib/libiface.so",
+	"iface.h":     "include/iface.h",
 }
 
 // testing
