@@ -23,7 +23,7 @@ src
 
 // create static & dynamic libraries
 
-var linker = Linker.new(cc)
+var linker = Linker.new()
 
 linker.archive(lib_src.toList, "libiface.a")
 linker.link(lib_src.toList, [], "libiface.so", true)
